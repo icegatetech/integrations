@@ -1,0 +1,94 @@
+minimum_spans: 8
+
+# Two turns, one conversation (index.ts) double every span count from the
+# single-turn shape: invoke_agent/execute_tool go from an implicit 1 to a
+# declared 2 (one per turn), chat goes from 2 to 4 (planning + final, per
+# turn). Every span expectation also asserts gen_ai.conversation.id is
+# present — including on `chat`, which this recipe never sets directly.
+# ConversationSpanProcessor.onStart stamps it from an AsyncLocalStorage
+# before the span reaches the exporter, so the auto-instrumented spans carry
+# it too, not just the manual invoke_agent/execute_tool ones.
+spans:
+  - name: invoke_agent travel-concierge
+    count: 2
+    required_attributes:
+      gen_ai.operation.name: invoke_agent
+      gen_ai.agent.name: travel-concierge
+      gen_ai.agent.id: travel-concierge-001
+      gen_ai.provider.name: openai
+    present_attributes:
+      - gen_ai.conversation.id
+
+  - name: execute_tool get_weather
+    parent: invoke_agent travel-concierge
+    count: 2
+    required_attributes:
+      gen_ai.operation.name: execute_tool
+      gen_ai.tool.name: get_weather
+      gen_ai.tool.type: function
+    present_attributes:
+      - gen_ai.tool.call.id
+      - gen_ai.conversation.id
+
+  - name: chat gemma4:12b-mlx
+    parent: invoke_agent travel-concierge
+    count: 4
+    required_attributes:
+      gen_ai.operation.name: chat
+      gen_ai.request.model: gemma4:12b-mlx
+      # Confirmed divergence from the Python recipe (see README "Differences
+      # from the Python recipe"):
+      # @opentelemetry/instrumentation-openai 0.19.0 does not reference
+      # OTEL_SEMCONV_STABILITY_OPT_IN anywhere in its source for the Chat
+      # Completions code path (grepped the installed package: zero hits) and
+      # unconditionally emits the older `gen_ai.system` attribute on this
+      # auto-instrumented span, never `gen_ai.provider.name`.
+      gen_ai.system: openai
+    present_attributes:
+      # The auto-instrumented span — this recipe's code never sets this
+      # attribute on it directly. Present only because ConversationSpanProcessor
+      # stamps every span started while a conversation is active, not just the
+      # manually-created ones above.
+      - gen_ai.conversation.id
+    numeric_attributes:
+      gen_ai.usage.input_tokens: { gt: 0 }
+      gen_ai.usage.output_tokens: { gt: 0 }
+    # Content capture is off; prompts must not be here. gen_ai.provider.name
+    # is asserted forbidden too, to make the divergence above an airtight
+    # absence rather than an unchecked possibility.
+    forbidden_attributes:
+      - gen_ai.input.messages
+      - gen_ai.output.messages
+      - gen_ai.provider.name
+
+operations:
+  - operation_name: invoke_agent
+    required_columns:
+      agent_name: travel-concierge
+      agent_id: travel-concierge-001
+    non_null_columns:
+      - provider_name
+      - conversation_id
+
+  - operation_name: execute_tool
+    required_columns:
+      tool_name: get_weather
+      tool_type: function
+    non_null_columns:
+      - tool_call_id
+      - conversation_id
+
+  - operation_name: chat
+    non_null_columns:
+      - request_model
+      - input_tokens
+      - output_tokens
+      - conversation_id
+      # Populated via IceGate's provider-name fallback (gen_ai.provider.name
+      # -> gen_ai.system -> llm.system) even though the raw span attribute is
+      # gen_ai.system, not gen_ai.provider.name. Confirmed on a real run, not
+      # assumed. This column is NOT a reliable way to tell which attribute
+      # name was actually emitted; the span-level required_attributes/
+      # forbidden_attributes checks above are what actually distinguish it
+      # (same lesson as the Python recipe's provider-name finding).
+      - provider_name

@@ -1,0 +1,31 @@
+minimum_spans: 8
+
+# recipe.py runs two turns in one conversation (see expectations.yaml for the
+# full doubled-count rationale). Both turns' prompts plant the same
+# ops-oncall@example.com marker specifically so this file's redaction checks
+# stay valid against every chat span, not just the first turn's.
+spans:
+  - name: chat gemma4:12b-mlx
+    parent: invoke_agent travel-concierge
+    count: 4
+    required_attributes:
+      gen_ai.operation.name: chat
+    present_attributes:
+      - gen_ai.input.messages
+      - gen_ai.output.messages
+      - gen_ai.conversation.id
+    contains_attributes:
+      # Redaction ran: the marker reached the span.
+      gen_ai.input.messages: "[REDACTED_EMAIL]"
+    not_contains_attributes:
+      # And the raw value never reached telemetry. This is the assertion that
+      # actually matters — the marker could be present while the original
+      # leaked alongside it.
+      gen_ai.input.messages: "ops-oncall@example.com"
+
+operations:
+  - operation_name: chat
+    non_null_columns:
+      - input_messages
+      - output_messages
+      - conversation_id

@@ -1,0 +1,15 @@
+[project]
+name = "icegate-verify"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "adbc-driver-flightsql==1.12.0",
+    "adbc-driver-manager==1.12.0",
+    "pyarrow==25.0.0",
+    "PyYAML==6.0.3",
+    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+]
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
